@@ -103,6 +103,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     const coverBlob = await coverResponse.blob();
                     const coverFile = new File([coverBlob], "AI_Cover_" + selectedFile.name, { type: "audio/mp3" });
 
+                    // 2.5 Get Original Duration to trim the result
+                    try {
+                        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        const arrayBuffer = await selectedFile.arrayBuffer();
+                        const originalBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                        const duration = originalBuffer.duration;
+
+                        // Set End Time input to match original duration
+                        // formatTime returns mm:ss, we might lose sub-second precision but it's good enough for UI
+                        // Using Math.ceil to ensure we don't cut off the very end
+                        const formattedTime = formatTime(Math.ceil(duration));
+                        document.getElementById('end-time').value = formattedTime;
+
+                        console.log(`Original duration: ${duration}s, Setting end time to: ${formattedTime}`);
+
+                        // Cleanup
+                        if (audioContext.state !== 'closed') audioContext.close();
+                    } catch (e) {
+                        console.error("Failed to get original duration:", e);
+                    }
+
                     // 3. Process as usual
                     await handleFile(coverFile);
 
