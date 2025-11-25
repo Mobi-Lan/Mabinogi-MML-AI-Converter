@@ -36,24 +36,19 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         return res.status(400).json({ error: 'No audio file uploaded' });
     }
     try {
-        console.log(`[3/5] Requesting AI Cover generation...`);
+        console.log(`[1/5] File uploaded: ${req.file.originalname}`);
 
         // Construct public URL for the uploaded file
-        // NOTE: If running locally, Suno API cannot access 'localhost'. 
-        // You need to use ngrok or deploy to a public server.
         const publicAudioUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-        console.log('Public Audio URL:', publicAudioUrl);
+        console.log('[2/5] Public Audio URL:', publicAudioUrl);
 
-        console.log('Sending request to Suno API...');
-        console.log('SUNO_URL:', SUNO_URL);
-        console.log('API_KEY exists:', !!API_KEY);
-
-        // Construct callback URL (optional, but API requires it)
+        // Construct callback URL (required by Suno API)
         const callbackUrl = `${req.protocol}://${req.get('host')}/api/suno-callback`;
 
+        console.log('[3/5] Sending request to Suno API...');
         const sunoResponse = await axios.post(`${SUNO_URL}/generate/upload-cover`, {
             uploadUrl: publicAudioUrl,
-            callBackUrl: callbackUrl,  // Required by Suno API
+            callBackUrl: callbackUrl,
             style: "Piano Solo, Clean, Acoustic",
             title: `Piano Cover - ${req.file.originalname}`,
             customMode: true,
@@ -66,91 +61,113 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
             }
         });
 
-        console.log('Suno API Response Status:', sunoResponse.status);
-        console.log('Suno API Response Headers:', JSON.stringify(sunoResponse.headers, null, 2));
-        console.log('Suno API Response Data (full):', JSON.stringify(sunoResponse.data, null, 2));
-        console.log('Response data type:', typeof sunoResponse.data);
-        console.log('Response data keys:', Object.keys(sunoResponse.data || {}));
+        console.log('Suno API Response:', JSON.stringify(sunoResponse.data, null, 2));
 
-        // Parse response - try multiple possible formats
+        // Extract taskId from response
         let taskId = null;
         const responseData = sunoResponse.data;
 
-        // Try different possible response structures
-        if (responseData) {
-            // Format 1: { data: { taskId: "..." } }
-            if (responseData.data && responseData.data.taskId) {
-                taskId = responseData.data.taskId;
-                console.log('Found taskId in data.taskId:', taskId);
-            }
-            // Format 2: { taskId: "..." }
-            else if (responseData.taskId) {
-                taskId = responseData.taskId;
-                console.log('Found taskId in taskId:', taskId);
-            }
-            // Format 3: { id: "..." }
-            else if (responseData.id) {
-                taskId = responseData.id;
-                console.log('Found taskId in id:', taskId);
-            }
-            // Format 4: { data: { id: "..." } }
-            else if (responseData.data && responseData.data.id) {
-                taskId = responseData.data.id;
-                console.log('Found taskId in data.id:', taskId);
-            }
-            // Format 5: { data: [{ id: "..." }] } (array format)
-            else if (responseData.data && Array.isArray(responseData.data) && responseData.data.length > 0) {
-                taskId = responseData.data[0].id || responseData.data[0].taskId;
-                console.log('Found taskId in data array:', taskId);
-            }
-            // Format 6: Direct array [{ id: "..." }]
-            else if (Array.isArray(responseData) && responseData.length > 0) {
-                taskId = responseData[0].id || responseData[0].taskId;
-                console.log('Found taskId in array:', taskId);
-            }
+        if (responseData.data && responseData.data.taskId) {
+            taskId = responseData.data.taskId;
+        } else if (responseData.taskId) {
+            taskId = responseData.taskId;
         }
 
         if (!taskId) {
-            console.error("=== FAILED TO FIND TASK ID ===");
-            console.error("Full Suno Response:", JSON.stringify(sunoResponse.data, null, 2));
-            console.error("Response structure:", JSON.stringify(Object.keys(sunoResponse.data || {})));
-            throw new Error('No Task ID returned from Suno API. Check console for full response.');
+            console.error("Failed to get taskId from Suno API");
+            console.error("Full response:", JSON.stringify(sunoResponse.data, null, 2));
+            throw new Error('No Task ID returned from Suno API');
         }
+
         console.log(`[3/5] Task started. ID: ${taskId}`);
 
-        // 3. Poll for completion
+        // Poll for completion using correct Suno API endpoint
         let audioUrl = null;
         let attempts = 0;
-        const maxAttempts = 60; // 2 minutes
+        const maxAttempts = 60; // 5 minutes (60 * 5s)
+
+        console.log(`[4/5] Polling for task completion...`);
 
         while (attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
             attempts++;
 
-            const statusResponse = await axios.get(`${SUNO_URL}/get/${taskId}`, {
-                headers: { 'Authorization': `Bearer ${API_KEY}` }
-            });
+            try {
+                // Query task status using correct endpoint
+                const statusResponse = await axios.get(`${SUNO_URL}/suno/cover/record-info`, {
+                    headers: { 'Authorization': `Bearer ${API_KEY}` },
+                    params: { taskId: taskId }
+                });
 
-            const status = statusResponse.data.status;
-            console.log(`[4/5] Polling status: ${status} (${attempts}/${maxAttempts})`);
+                console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
-            if (status === 'completed' || status === 'succeeded') {
-                if (statusResponse.data.clips && statusResponse.data.clips.length > 0) {
-                    audioUrl = statusResponse.data.clips[0].audio_url;
-                    break;
+                const statusData = statusResponse.data;
+
+                // Check API response code
+                if (statusData.code !== 200) {
+                    console.error('API error:', statusData);
+                    continue;
                 }
-            } else if (status === 'failed' || status === 'error') {
-                throw new Error('Suno generation failed');
+
+                const taskData = statusData.data;
+
+                // successFlag: 1 = completed, 0 = processing, -1 = failed
+                if (taskData.successFlag === 1) {
+                    console.log('[4/5] Task completed successfully!');
+                    console.log('Response:', JSON.stringify(taskData.response, null, 2));
+
+                    // Find audio URL in response
+                    if (taskData.response) {
+                        if (taskData.response.audioUrl) {
+                            audioUrl = taskData.response.audioUrl;
+                        } else if (taskData.response.audio_url) {
+                            audioUrl = taskData.response.audio_url;
+                        } else if (taskData.response.url) {
+                            audioUrl = taskData.response.url;
+                        } else if (taskData.response.images && taskData.response.images.length > 0) {
+                            // Check if first item is audio file
+                            const firstUrl = taskData.response.images[0];
+                            if (firstUrl.includes('.mp3') || firstUrl.includes('.wav') || firstUrl.includes('.ogg')) {
+                                audioUrl = firstUrl;
+                            }
+                        }
+                    }
+
+                    if (audioUrl) {
+                        console.log('Found audio URL:', audioUrl);
+                        break;
+                    } else {
+                        console.error('Task completed but no audio URL found');
+                        console.error('Full response:', JSON.stringify(taskData.response, null, 2));
+                        throw new Error('No audio URL in completed task');
+                    }
+                } else if (taskData.successFlag === -1) {
+                    const errorMsg = taskData.errorMessage || 'Unknown error';
+                    throw new Error(`Suno generation failed: ${errorMsg}`);
+                } else {
+                    // Still processing
+                    console.log(`Task still processing... (${attempts}/${maxAttempts})`);
+                }
+            } catch (pollError) {
+                console.error(`Polling error (attempt ${attempts}):`, pollError.message);
+                if (pollError.response) {
+                    console.error('Status:', pollError.response.status);
+                    console.error('Data:', pollError.response.data);
+                }
+                // Continue unless last attempt
+                if (attempts >= maxAttempts) {
+                    throw pollError;
+                }
             }
         }
 
         if (!audioUrl) {
-            throw new Error('Timeout waiting for generation');
+            throw new Error('Timeout waiting for generation (5 minutes)');
         }
 
-        console.log(`[5/5] Generation complete. Downloading: ${audioUrl}`);
+        console.log(`[5/5] Downloading result: ${audioUrl}`);
 
-        // 4. Download the result
+        // Download the generated audio
         const resultResponse = await axios.get(audioUrl, { responseType: 'arraybuffer' });
         const resultFileName = `cover-${Date.now()}.mp3`;
         const resultPath = path.join('uploads', resultFileName);
@@ -159,6 +176,8 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         // Cleanup original upload
         fs.unlinkSync(req.file.path);
 
+        console.log('[5/5] Cover generated successfully!');
+
         res.json({
             success: true,
             message: "Cover generated successfully",
@@ -166,7 +185,7 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error('--- SERVER ERROR ---');
+        console.error('=== SERVER ERROR ===');
         console.error(error);
 
         let errorMessage = error.message;
@@ -185,16 +204,17 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
     }
 });
 
-// Callback endpoint for Suno API (optional, for webhook notifications)
+// Callback endpoint for Suno API
 app.post('/api/suno-callback', (req, res) => {
-    console.log('Suno callback received:', JSON.stringify(req.body, null, 2));
+    console.log('=== Suno Callback Received ===');
+    console.log(JSON.stringify(req.body, null, 2));
     res.json({ success: true });
 });
 
 // Export for Vercel serverless
 module.exports = app;
 
-// Start server only if running locally (not on Vercel)
+// Start server only if running locally
 if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
