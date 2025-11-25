@@ -48,8 +48,12 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         console.log('SUNO_URL:', SUNO_URL);
         console.log('API_KEY exists:', !!API_KEY);
 
+        // Construct callback URL (optional, but API requires it)
+        const callbackUrl = `${req.protocol}://${req.get('host')}/api/suno-callback`;
+
         const sunoResponse = await axios.post(`${SUNO_URL}/generate/upload-cover`, {
             uploadUrl: publicAudioUrl,
+            callBackUrl: callbackUrl,  // Required by Suno API
             style: "Piano Solo, Clean, Acoustic",
             title: `Piano Cover - ${req.file.originalname}`,
             customMode: true,
@@ -179,6 +183,12 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
             details: errorDetails
         });
     }
+});
+
+// Callback endpoint for Suno API (optional, for webhook notifications)
+app.post('/api/suno-callback', (req, res) => {
+    console.log('Suno callback received:', JSON.stringify(req.body, null, 2));
+    res.json({ success: true });
 });
 
 // Export for Vercel serverless
