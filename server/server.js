@@ -63,21 +63,53 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         });
 
         console.log('Suno API Response Status:', sunoResponse.status);
-        console.log('Suno API Response Data:', JSON.stringify(sunoResponse.data, null, 2));
+        console.log('Suno API Response Headers:', JSON.stringify(sunoResponse.headers, null, 2));
+        console.log('Suno API Response Data (full):', JSON.stringify(sunoResponse.data, null, 2));
+        console.log('Response data type:', typeof sunoResponse.data);
+        console.log('Response data keys:', Object.keys(sunoResponse.data || {}));
 
-        // Parse response according to Suno API documentation
-        // Expected format: { code: 200, msg: "success", data: { taskId: "..." } }
+        // Parse response - try multiple possible formats
         let taskId = null;
-        if (sunoResponse.data.data && sunoResponse.data.data.taskId) {
-            taskId = sunoResponse.data.data.taskId;
-        } else if (sunoResponse.data.taskId) {
-            taskId = sunoResponse.data.taskId;
-        } else if (sunoResponse.data.id) {
-            taskId = sunoResponse.data.id;
+        const responseData = sunoResponse.data;
+
+        // Try different possible response structures
+        if (responseData) {
+            // Format 1: { data: { taskId: "..." } }
+            if (responseData.data && responseData.data.taskId) {
+                taskId = responseData.data.taskId;
+                console.log('Found taskId in data.taskId:', taskId);
+            }
+            // Format 2: { taskId: "..." }
+            else if (responseData.taskId) {
+                taskId = responseData.taskId;
+                console.log('Found taskId in taskId:', taskId);
+            }
+            // Format 3: { id: "..." }
+            else if (responseData.id) {
+                taskId = responseData.id;
+                console.log('Found taskId in id:', taskId);
+            }
+            // Format 4: { data: { id: "..." } }
+            else if (responseData.data && responseData.data.id) {
+                taskId = responseData.data.id;
+                console.log('Found taskId in data.id:', taskId);
+            }
+            // Format 5: { data: [{ id: "..." }] } (array format)
+            else if (responseData.data && Array.isArray(responseData.data) && responseData.data.length > 0) {
+                taskId = responseData.data[0].id || responseData.data[0].taskId;
+                console.log('Found taskId in data array:', taskId);
+            }
+            // Format 6: Direct array [{ id: "..." }]
+            else if (Array.isArray(responseData) && responseData.length > 0) {
+                taskId = responseData[0].id || responseData[0].taskId;
+                console.log('Found taskId in array:', taskId);
+            }
         }
 
         if (!taskId) {
+            console.error("=== FAILED TO FIND TASK ID ===");
             console.error("Full Suno Response:", JSON.stringify(sunoResponse.data, null, 2));
+            console.error("Response structure:", JSON.stringify(Object.keys(sunoResponse.data || {})));
             throw new Error('No Task ID returned from Suno API. Check console for full response.');
         }
         console.log(`[3/5] Task started. ID: ${taskId}`);
