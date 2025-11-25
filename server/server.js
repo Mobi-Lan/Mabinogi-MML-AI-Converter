@@ -94,24 +94,25 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         // Poll for completion using correct Suno API endpoint
         let audioUrl = null;
         let attempts = 0;
-        const maxAttempts = 60; // 5 minutes (60 * 5s)
+        const maxAttempts = 120; // 10 minutes (120 * 5s)
 
-        console.log(`[4/5] Polling for task completion...`);
+        console.log(`[4/5] Polling for task completion (max 10 minutes)...`);
 
         while (attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
             attempts++;
 
             try {
-                // Query task status - try with taskId in URL path
-                const statusResponse = await axios.get(`${SUNO_URL}/suno/cover/record-info?taskId=${taskId}`, {
-                    headers: { 'Authorization': `Bearer ${API_KEY}` }
+                // Query task status using correct endpoint for Music Generation
+                // Endpoint: /api/v1/generate/record-info
+                const statusResponse = await axios.get(`${SUNO_URL}/generate/record-info`, {
+                    headers: { 'Authorization': `Bearer ${API_KEY}` },
+                    params: { taskId: taskId }
                 });
 
                 console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
                 const statusData = statusResponse.data;
-                console.log('Status response:', JSON.stringify(statusData, null, 2));
 
                 // Check API response code
                 if (statusData.code !== 200) {
@@ -121,32 +122,22 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
 
                 const taskData = statusData.data;
 
-                // Check if data is null (task not ready yet)
+                // Check if data is null
                 if (!taskData) {
                     console.log('Task data is null, still processing...');
                     continue;
                 }
 
-                // successFlag: 1 = completed, 0 = processing, -1 = failed
-                if (taskData.successFlag === 1) {
-                    console.log('[4/5] Task completed successfully!');
-                    console.log('Response:', JSON.stringify(taskData.response, null, 2));
+                const status = taskData.status;
+                console.log(`Task Status: ${status}`);
 
-                    // Find audio URL in response
-                    if (taskData.response) {
-                        if (taskData.response.audioUrl) {
-                            audioUrl = taskData.response.audioUrl;
-                        } else if (taskData.response.audio_url) {
-                            audioUrl = taskData.response.audio_url;
-                        } else if (taskData.response.url) {
-                            audioUrl = taskData.response.url;
-                        } else if (taskData.response.images && taskData.response.images.length > 0) {
-                            // Check if first item is audio file
-                            const firstUrl = taskData.response.images[0];
-                            if (firstUrl.includes('.mp3') || firstUrl.includes('.wav') || firstUrl.includes('.ogg')) {
-                                audioUrl = firstUrl;
-                            }
-                        }
+                if (status === 'SUCCESS' || status === 'FIRST_SUCCESS') {
+                    console.log('[4/5] Task completed successfully!');
+
+                    // Find audio URL in response.sunoData
+                    if (taskData.response && taskData.response.sunoData && taskData.response.sunoData.length > 0) {
+                        const track = taskData.response.sunoData[0];
+                        audioUrl = track.audioUrl;
                     }
 
                     if (audioUrl) {
@@ -154,22 +145,15 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
                         break;
                     } else {
                         console.error('Task completed but no audio URL found');
-                        console.error('Full response:', JSON.stringify(taskData.response, null, 2));
                         throw new Error('No audio URL in completed task');
                     }
-                } else if (taskData.successFlag === -1) {
-                    const errorMsg = taskData.errorMessage || 'Unknown error';
-                    throw new Error(`Suno generation failed: ${errorMsg}`);
-                } else {
-                    // Still processing
-                    console.log(`Task still processing... (${attempts}/${maxAttempts})`);
+                } else if (status === 'GENERATE_AUDIO_FAILED' || status === 'CREATE_TASK_FAILED') {
+                    throw new Error(`Suno generation failed: ${status}`);
                 }
+                // If PENDING or other status, continue polling
+
             } catch (pollError) {
                 console.error(`Polling error (attempt ${attempts}):`, pollError.message);
-                if (pollError.response) {
-                    console.error('Status:', pollError.response.status);
-                    console.error('Data:', pollError.response.data);
-                }
                 // Continue unless last attempt
                 if (attempts >= maxAttempts) {
                     throw pollError;
