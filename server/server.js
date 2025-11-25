@@ -93,15 +93,15 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
             attempts++;
 
             try {
-                // Query task status using correct endpoint
-                const statusResponse = await axios.get(`${SUNO_URL}/suno/cover/record-info`, {
-                    headers: { 'Authorization': `Bearer ${API_KEY}` },
-                    params: { taskId: taskId }
+                // Query task status - try with taskId in URL path
+                const statusResponse = await axios.get(`${SUNO_URL}/suno/cover/record-info?taskId=${taskId}`, {
+                    headers: { 'Authorization': `Bearer ${API_KEY}` }
                 });
 
                 console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
                 const statusData = statusResponse.data;
+                console.log('Status response:', JSON.stringify(statusData, null, 2));
 
                 // Check API response code
                 if (statusData.code !== 200) {
@@ -110,6 +110,12 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
                 }
 
                 const taskData = statusData.data;
+
+                // Check if data is null (task not ready yet)
+                if (!taskData) {
+                    console.log('Task data is null, still processing...');
+                    continue;
+                }
 
                 // successFlag: 1 = completed, 0 = processing, -1 = failed
                 if (taskData.successFlag === 1) {
