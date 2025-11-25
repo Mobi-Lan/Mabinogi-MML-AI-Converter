@@ -50,15 +50,21 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         console.log('[2/5] Callback URL:', callbackUrl);
 
         console.log('[3/5] Sending request to Suno API...');
-        const sunoResponse = await axios.post(`${SUNO_URL}/generate/upload-cover`, {
+
+        // Use minimal required parameters according to API docs
+        const requestBody = {
             uploadUrl: publicAudioUrl,
-            callBackUrl: callbackUrl,
-            style: "Piano Solo, Clean, Acoustic",
-            title: `Piano Cover - ${req.file.originalname}`,
             customMode: true,
             instrumental: true,
-            model: "V5"
-        }, {
+            model: "V4",  // Try V4 instead of V5 for stability
+            callBackUrl: callbackUrl,
+            style: "Piano Solo",  // Simplified style
+            title: "Piano Cover"  // Simplified title
+        };
+
+        console.log('Request body:', JSON.stringify(requestBody, null, 2));
+
+        const sunoResponse = await axios.post(`${SUNO_URL}/generate/upload-cover`, requestBody, {
             headers: {
                 'Authorization': `Bearer ${API_KEY}`,
                 'Content-Type': 'application/json'
