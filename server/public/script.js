@@ -274,6 +274,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(err);
             loadingOverlay.style.display = 'none';
             alert("파일 처리 중 오류가 발생했습니다: " + err.message);
+        } finally {
+            // Cleanup AudioContext to prevent limit errors
+            if (typeof audioContext !== 'undefined' && audioContext.state !== 'closed') {
+                audioContext.close().catch(e => console.error("Error closing AudioContext:", e));
+            }
         }
     }
 
@@ -296,18 +301,30 @@ document.addEventListener('DOMContentLoaded', () => {
     async function resampleTo16k(audioBuffer) {
         if (audioBuffer.sampleRate === 16000) return audioBuffer;
 
-        const offlineCtx = new OfflineAudioContext(
-            audioBuffer.numberOfChannels,
-            audioBuffer.duration * 16000,
-            16000
-        );
+        // Ensure length is an integer
+        const length = Math.ceil(audioBuffer.duration * 16000);
 
-        const source = offlineCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(offlineCtx.destination);
-        source.start();
+        // Safety check for length
+        if (length <= 0) return audioBuffer;
 
-        return await offlineCtx.startRendering();
+        try {
+            const offlineCtx = new OfflineAudioContext(
+                audioBuffer.numberOfChannels,
+                length,
+                16000
+            );
+
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(offlineCtx.destination);
+            source.start();
+
+            return await offlineCtx.startRendering();
+        } catch (e) {
+            console.error("Resampling failed:", e);
+            // Fallback: return original buffer (Magenta might handle it or fail later, but better than hanging)
+            return audioBuffer;
+        }
     }
 
 

@@ -56,10 +56,12 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
             uploadUrl: publicAudioUrl,
             customMode: true,
             instrumental: true,
-            model: "V4",  // Try V4 instead of V5 for stability
+            model: "V4",
             callBackUrl: callbackUrl,
-            style: "Piano Solo",  // Simplified style
-            title: "Piano Cover"  // Simplified title
+            style: "Piano Solo, Faithful, No Improvisation", // More specific style
+            title: "Piano Cover",
+            audioWeight: 0.9, // High adherence to original audio (0.0 - 1.0)
+            // weirdnessConstraint: 0.9 // High constraint on deviation (0.0 - 1.0) - Optional, trying audioWeight first
         };
 
         console.log('Request body:', JSON.stringify(requestBody, null, 2));
