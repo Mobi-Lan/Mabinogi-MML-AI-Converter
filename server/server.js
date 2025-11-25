@@ -52,16 +52,15 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         console.log('[3/5] Sending request to Suno API...');
 
         // Use minimal required parameters according to API docs
+        // Note: audioWeight/weirdnessConstraint are NOT supported in upload-cover endpoint
         const requestBody = {
             uploadUrl: publicAudioUrl,
             customMode: true,
             instrumental: true,
-            model: "V4",
+            model: "chirp-v3-5", // V3.5 follows structure better than V4
             callBackUrl: callbackUrl,
-            style: "Piano Transcription, Note for Note, High Fidelity, No Improvisation, Classical Piano",
-            title: "Piano Cover",
-            audioWeight: 1.0, // Maximum adherence to original audio (0.0 - 1.0)
-            weirdnessConstraint: 1.0 // Maximum constraint on deviation (0.0 - 1.0)
+            style: "Piano Solo", // Keep style simple to avoid hallucinations
+            title: "Piano Cover"
         };
 
         console.log('Request body:', JSON.stringify(requestBody, null, 2));
