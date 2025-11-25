@@ -39,11 +39,15 @@ app.post('/api/generate-cover', upload.single('audio'), async (req, res) => {
         console.log(`[1/5] File uploaded: ${req.file.originalname}`);
 
         // Construct public URL for the uploaded file
-        const publicAudioUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        // Force HTTPS for Suno API (many APIs reject HTTP URLs)
+        const protocol = 'https'; // Force HTTPS instead of req.protocol
+        const host = req.get('host');
+        const publicAudioUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
         console.log('[2/5] Public Audio URL:', publicAudioUrl);
 
         // Construct callback URL (required by Suno API)
-        const callbackUrl = `${req.protocol}://${req.get('host')}/api/suno-callback`;
+        const callbackUrl = `${protocol}://${host}/api/suno-callback`;
+        console.log('[2/5] Callback URL:', callbackUrl);
 
         console.log('[3/5] Sending request to Suno API...');
         const sunoResponse = await axios.post(`${SUNO_URL}/generate/upload-cover`, {
