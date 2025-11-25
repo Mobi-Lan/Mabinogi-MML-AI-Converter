@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mabinogi MML Converter v8 (AI Edition)</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); color: white; z-index: 1000; flex-direction: column; justify-content: center; align-items: center;">
+        <div class="spinner"
+            style="border: 4px solid #00e676; border-top: 4px solid transparent; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px;">
+        </div>
+        <h3 id="loading-text">AI 모델 로딩 중...</h3>
+        <div
+            style="width: 300px; height: 6px; background: #333; border-radius: 3px; margin-top: 15px; overflow: hidden;">
+            <div id="progress-bar" style="width: 0%; height: 100%; background: #00e676; transition: width 0.3s ease;">
+            </div>
+        </div>
+        <p id="progress-percent" style="margin-top: 5px; font-size: 0.9rem; color: #ccc;">0%</p>
+    </div>
+
+    <div class="app-container">
+        <!-- Header / Title Input -->
+        <div class="header-section">
+            <div class="title-row">
+                <label class="section-label">곡 제목</label>
+            </div>
+            <div class="input-wrapper">
+                <input type="text" id="song-title" placeholder="곡 제목을 입력하세요.">
+                <button class="clear-btn" onclick="document.getElementById('song-title').value=''">×</button>
+            </div>
+            <p class="composer-label">Made by <span id="composer-name">란님 | 알리사</span></p>
+        </div>
+
+        <main>
+            <!-- Upload Section -->
+            <div class="upload-section" id="drop-zone">
+                <div class="icon">🎵</div>
+                <p>MIDI / MP3 업로드</p>
+                <input type="file" id="midi-input" accept=".mid,.midi,.mp3,.wav,.ogg,.mp4" style="display: none;">
+                <p id="file-name" style="margin-top: 10px; font-size: 0.9rem; color: #00e676;"></p>
+            </div>
+
+            <!-- AI Cover Generation Button (New) -->
+            <div style="margin-bottom: 20px;">
+                <button id="generate-cover-btn" class="action-btn"
+                    style="background: linear-gradient(45deg, #ff00cc, #333399); color: white; border: none;">
+                    ✨ AI 피아노 커버 생성 (Suno)
+                </button>
+                <p style="font-size: 0.8rem; color: #aaa; margin-top: 5px; text-align: center;">
+                    * 보컬/드럼이 있는 곡을 피아노 곡으로 변환하여 MML 품질을 높입니다. (약 30초 소요)
+                </p>
+            </div>
+
+            <!-- Time Range Inputs -->
+            <div class="controls-area">
+                <div class="control-row">
+                    <input type="text" id="start-time" placeholder="00:00" class="time-input">
+                    <span>~</span>
+                    <input type="text" id="end-time" placeholder="00:00" class="time-input">
+                </div>
+                <button id="start-analysis-btn" class="action-btn secondary" style="margin-bottom: 15px;">분석 시작</button>
+            </div>
+
+            <!-- Controls Section (Hidden by default) -->
+            <div id="controls" style="display: none;">
+                <div class="control-row">
+                    <input type="number" id="bpm-input" value="120" placeholder="BPM" class="bpm-input">
+                    <select id="quantization-select" class="quant-select">
+                        <option value="32" selected>1/32 (기본)</option>
+                        <option value="64">1/64 (섬세함)</option>
+                        <option value="128">1/128 (초정밀)</option>
+                        <option value="0">보정 없음 (Raw)</option>
+                    </select>
+                </div>
+
+                <!-- Volume Controls -->
+                <div class="control-row" style="margin-top: 10px; gap: 5px;">
+                    <label style="font-size: 0.8rem; color: #ccc; align-self: center;">음량(0-15+):</label>
+                    <input type="number" id="vol-melody" value="15" min="0" max="30" placeholder="Mel" class="bpm-input"
+                        title="멜로디 음량 (15 이상은 증폭)">
+                    <input type="number" id="vol-harmony1" value="15" min="0" max="30" placeholder="H1"
+                        class="bpm-input" title="화음1 음량 (15 이상은 증폭)">
+                    <input type="number" id="vol-harmony2" value="15" min="0" max="30" placeholder="H2"
+                        class="bpm-input" title="화음2 음량 (15 이상은 증폭)">
+                </div>
+
+                <!-- Noise Filter Controls -->
+                <div class="control-row" style="margin-top: 10px; gap: 5px;">
+                    <label style="font-size: 0.8rem; color: #ccc; align-self: center;">필터:</label>
+                    <input type="number" id="min-duration" value="50" min="0" max="500" placeholder="50ms"
+                        class="bpm-input" title="최소 길이(ms)">
+                    <input type="number" id="min-velocity" value="10" min="0" max="100" placeholder="10%"
+                        class="bpm-input" title="최소 강도(%)">
+                </div>
+
+                <!-- MML Slicing Controls -->
+                <div class="control-row" style="margin-top: 10px; gap: 5px;">
+                    <label style="font-size: 0.8rem; color: #ccc; align-self: center;">MML 구간:</label>
+                    <input type="text" id="mml-start-time" placeholder="00:00" class="bpm-input" title="MML 시작 시간">
+                    <span style="color: #ccc; align-self: center;">~</span>
+                    <input type="text" id="mml-end-time" placeholder="끝까지" class="bpm-input" title="MML 종료 시간">
+                </div>
+
+                <!-- <div id="track-list" style="margin-top: 10px; margin-bottom: 15px;"></div> -->
+                <div id="track-list" style="display: none;"></div>
+
+                <button id="convert-btn" class="action-btn primary">변환하기</button>
+            </div>
+
+            <!-- Result Section -->
+            <div id="result-section" style="display: none; margin-top: 20px;">
+                <div id="error-display" class="error-banner" style="display: none;"></div>
+
+                <!-- Melody Card -->
+                <div class="mml-card">
+                    <div class="card-header">
+                        <div class="icon-label">
+                            <div class="speaker-icon">🔊</div>
+                            <span class="part-name">멜로디</span>
+                        </div>
+                        <span class="char-count" id="count-melody">0/1200</span>
+                    </div>
+                    <div class="card-body">
+                        <textarea id="mml-melody" readonly></textarea>
+                        <button class="copy-btn" data-target="mml-melody">복사</button>
+                    </div>
+                </div>
+
+                <!-- Harmony 1 Card -->
+                <div class="mml-card">
+                    <div class="card-header">
+                        <div class="icon-label">
+                            <div class="speaker-icon">🔊</div>
+                            <span class="part-name">화음 1</span>
+                        </div>
+                        <span class="char-count" id="count-harmony1">0/1200</span>
+                    </div>
+                    <div class="card-body">
+                        <textarea id="mml-harmony1" readonly></textarea>
+                        <button class="copy-btn" data-target="mml-harmony1">복사</button>
+                    </div>
+                </div>
+
+                <!-- Harmony 2 Card -->
+                <div class="mml-card">
+                    <div class="card-header">
+                        <div class="icon-label">
+                            <div class="speaker-icon">🔊</div>
+                            <span class="part-name">화음 2</span>
+                        </div>
+                        <span class="char-count" id="count-harmony2">0/1200</span>
+                    </div>
+                    <div class="card-body">
+                        <textarea id="mml-harmony2" readonly></textarea>
+                        <button class="copy-btn" data-target="mml-harmony2">복사</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <div class="bottom-content">
+                <p class="ai-credit">Powered by Antigravity & Suno AI</p>
+                <button id="create-song-btn" class="create-btn">전체 복사</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@magenta/music@1.23.1/dist/magentamusic.min.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
